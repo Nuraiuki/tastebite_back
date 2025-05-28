@@ -5,7 +5,7 @@ from werkzeug.utils import secure_filename
 from datetime import datetime
 import traceback
 import requests
-from openai import OpenAI
+from openai import OpenAI, AsyncOpenAI
 import json
 import os
 
@@ -17,7 +17,14 @@ from .models import (
 # ───────────────────────────────────────────────────────────────
 #  Init OpenAI client (uses env var OPENAI_API_KEY)
 # ───────────────────────────────────────────────────────────────
-client = OpenAI()  # API key will be automatically loaded from OPENAI_API_KEY env var
+api_key = os.getenv("OPENAI_API_KEY")
+if not api_key:
+    raise ValueError("OPENAI_API_KEY environment variable is not set")
+
+client = OpenAI(
+    api_key=api_key,
+    base_url="https://api.openai.com/v1"
+)
 
 # ───────────────────────────────────────────────────────────────
 #  Main blueprint
