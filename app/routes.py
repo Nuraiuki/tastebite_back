@@ -17,7 +17,7 @@ from .models import (
 # ───────────────────────────────────────────────────────────────
 #  Init OpenAI client (uses env var OPENAI_API_KEY)
 # ───────────────────────────────────────────────────────────────
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))  # <-- ключ берётся из переменной окружения
+client = OpenAI()  # API key will be automatically loaded from OPENAI_API_KEY env var
 
 # ───────────────────────────────────────────────────────────────
 #  Main blueprint
