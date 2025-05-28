@@ -5,7 +5,6 @@ from werkzeug.utils import secure_filename
 from datetime import datetime
 import traceback
 import requests
-from openai import OpenAI, AsyncOpenAI
 import json
 import os
 
@@ -13,18 +12,7 @@ from .models import (
     db, Recipe, Ingredient, User,
     Comment, Rating, Favorite,
 )
-
-# ───────────────────────────────────────────────────────────────
-#  Init OpenAI client (uses env var OPENAI_API_KEY)
-# ───────────────────────────────────────────────────────────────
-api_key = os.getenv("OPENAI_API_KEY")
-if not api_key:
-    raise ValueError("OPENAI_API_KEY environment variable is not set")
-
-client = OpenAI(
-    api_key=api_key,
-    base_url="https://api.openai.com/v1"
-)
+from .utils.openai_client import get_openai_client
 
 # ───────────────────────────────────────────────────────────────
 #  Main blueprint
@@ -739,6 +727,7 @@ def ai_generate():
     )
 
     try:
+        client = get_openai_client()
         rsp = client.chat.completions.create(
             model="gpt-4o-mini",
             temperature=0.7,
