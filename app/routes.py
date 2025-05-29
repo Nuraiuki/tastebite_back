@@ -7,6 +7,10 @@ import traceback
 import requests
 import json
 import os
+import logging
+
+# Configure logging
+logger = logging.getLogger(__name__)
 
 from .models import (
     db, Recipe, Ingredient, User,
@@ -52,15 +56,15 @@ def list_routes():
 def register():
     try:
         data = request.get_json() or {}
-        print("Registration data:", data)  # Debug log
+        logger.info(f"Registration data: {data}")
         
         for f in ("email", "password", "name"):
             if f not in data:
-                print(f"Missing field: {f}")  # Debug log
+                logger.warning(f"Missing field: {f}")
                 return {"error": f"Missing {f}"}, 400
                 
         if User.query.filter_by(email=data["email"]).first():
-            print(f"Email already registered: {data['email']}")  # Debug log
+            logger.warning(f"Email already registered: {data['email']}")
             return {"error": "Email already registered"}, 400
 
         user = User(email=data["email"], name=data["name"])
@@ -68,10 +72,11 @@ def register():
         db.session.add(user)
         db.session.commit()
         login_user(user)
-        print(f"User registered successfully: {user.email}")  # Debug log
+        logger.info(f"User registered successfully: {user.email}")
         return user.to_dict(), 201
     except Exception as e:
-        print(f"Registration error: {str(e)}")  # Debug log
+        logger.error(f"Registration error: {str(e)}")
+        logger.exception("Full traceback:")
         db.session.rollback()
         return {"error": "Internal server error"}, 500
 
@@ -82,13 +87,16 @@ def login():
     user = User.query.filter_by(email=data.get("email")).first()
     if user and user.check_password(data.get("password")):
         login_user(user)
+        logger.info(f"User logged in: {user.email}")
         return user.to_dict()
+    logger.warning(f"Failed login attempt for email: {data.get('email')}")
     return {"error": "Invalid email or password"}, 401
 
 
 @bp.post("/auth/logout")
 @login_required
 def logout():
+    logger.info(f"User logged out: {current_user.email}")
     logout_user()
     return {"message": "Logged out"}
 
@@ -96,7 +104,9 @@ def logout():
 @bp.get("/auth/check")
 def auth_check():
     if current_user.is_authenticated:
+        logger.info(f"Auth check successful for user: {current_user.email}")
         return current_user.to_dict()
+    logger.warning("Auth check failed - user not authenticated")
     return {"error": "Not authenticated"}, 401
 
 
@@ -127,11 +137,25 @@ def upload():
 @bp.get("/recipes")
 def list_recipes():
     """Get all recipes or filter by external_id"""
-    external_id = request.args.get('external_id')
-    if external_id:
-        recipe = Recipe.query.filter_by(external_id=external_id).first()
-        return [recipe.to_dict()] if recipe else []
-    return [r.to_dict() for r in Recipe.query.all()]
+    try:
+        external_id = request.args.get('external_id')
+        logger.info(f"Listing recipes, external_id: {external_id}")
+        
+        if external_id:
+            recipe = Recipe.query.filter_by(external_id=external_id).first()
+            if recipe:
+                logger.info(f"Found recipe with external_id {external_id}")
+                return [recipe.to_dict()]
+            logger.info(f"No recipe found with external_id {external_id}")
+            return []
+            
+        recipes = Recipe.query.all()
+        logger.info(f"Found {len(recipes)} recipes")
+        return [r.to_dict() for r in recipes]
+    except Exception as e:
+        logger.error(f"Error listing recipes: {str(e)}")
+        logger.exception("Full traceback:")
+        return {"error": "Internal server error"}, 500
 
 
 @bp.get("/recipes/<int:rid>")

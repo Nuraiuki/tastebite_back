@@ -1,9 +1,14 @@
 from app import create_app, db
 from app.models import User, Recipe, Ingredient, Comment, Rating, Favorite, ExternalFavorite, ExternalRating, ExternalComment, Tag
 import logging
+import sys
 
 # Configure logging
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    stream=sys.stdout
+)
 logger = logging.getLogger(__name__)
 
 app = create_app()
@@ -70,9 +75,29 @@ with app.app_context():
         db.session.commit()
         logger.info("Ingredients added successfully")
         
+        # Verify data
+        logger.info("Verifying data...")
+        users = User.query.all()
+        recipes = Recipe.query.all()
+        ingredients = Ingredient.query.all()
+        
+        logger.info(f"Found {len(users)} users")
+        logger.info(f"Found {len(recipes)} recipes")
+        logger.info(f"Found {len(ingredients)} ingredients")
+        
+        for user in users:
+            logger.info(f"User: {user.email} (ID: {user.id})")
+        
+        for recipe in recipes:
+            logger.info(f"Recipe: {recipe.title} (ID: {recipe.id}, User ID: {recipe.user_id})")
+        
+        for ingredient in ingredients:
+            logger.info(f"Ingredient: {ingredient.name} (Recipe ID: {ingredient.recipe_id})")
+        
         logger.info("\nDatabase initialized successfully!")
         
     except Exception as e:
         logger.error(f"Error initializing database: {str(e)}")
         logger.exception("Full traceback:")
-        db.session.rollback() 
+        db.session.rollback()
+        raise 
