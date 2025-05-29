@@ -50,19 +50,30 @@ def list_routes():
 # ───────────────  Auth  ───────────────
 @bp.post("/auth/register")
 def register():
-    data = request.get_json() or {}
-    for f in ("email", "password", "name"):
-        if f not in data:
-            return {"error": f"Missing {f}"}, 400
-    if User.query.filter_by(email=data["email"]).first():
-        return {"error": "Email already registered"}, 400
+    try:
+        data = request.get_json() or {}
+        print("Registration data:", data)  # Debug log
+        
+        for f in ("email", "password", "name"):
+            if f not in data:
+                print(f"Missing field: {f}")  # Debug log
+                return {"error": f"Missing {f}"}, 400
+                
+        if User.query.filter_by(email=data["email"]).first():
+            print(f"Email already registered: {data['email']}")  # Debug log
+            return {"error": "Email already registered"}, 400
 
-    user = User(email=data["email"], name=data["name"])
-    user.set_password(data["password"])
-    db.session.add(user)
-    db.session.commit()
-    login_user(user)
-    return user.to_dict(), 201
+        user = User(email=data["email"], name=data["name"])
+        user.set_password(data["password"])
+        db.session.add(user)
+        db.session.commit()
+        login_user(user)
+        print(f"User registered successfully: {user.email}")  # Debug log
+        return user.to_dict(), 201
+    except Exception as e:
+        print(f"Registration error: {str(e)}")  # Debug log
+        db.session.rollback()
+        return {"error": "Internal server error"}, 500
 
 
 @bp.post("/auth/login")
