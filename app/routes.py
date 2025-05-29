@@ -429,18 +429,23 @@ def mealdb_areas():
 def get_profile():
     """Get current user's profile"""
     try:
+        logger.info(f"Getting profile for user: {current_user.email}")
         user = User.query.get(current_user.id)
         if not user:
+            logger.error(f"User not found: {current_user.id}")
             return jsonify({"error": "User not found"}), 404
         
-        return jsonify({
+        profile_data = {
             "id": user.id,
             "name": user.name,
             "email": user.email,
             "is_admin": user.is_admin
-        })
+        }
+        logger.info(f"Successfully retrieved profile for user: {user.email}")
+        return jsonify(profile_data)
     except Exception as e:
-        current_app.logger.error(f"Error getting profile: {str(e)}")
+        logger.error(f"Error getting profile: {str(e)}")
+        logger.exception("Full traceback:")
         return jsonify({"error": "Internal server error"}), 500
 
 @bp.get("/profile/recipes")
@@ -488,7 +493,10 @@ def get_user_ratings():
 @bp.get("/profile/stats")
 @login_required
 def get_user_stats():
+    """Get user statistics"""
     try:
+        logger.info(f"Getting stats for user: {current_user.email}")
+        
         # Get total recipes created (excluding imported ones)
         total_recipes = Recipe.query.filter_by(
             user_id=current_user.id,
@@ -504,14 +512,18 @@ def get_user_stats():
         # Get total comments
         total_comments = Comment.query.filter_by(user_id=current_user.id).count()
         
-        return jsonify({
+        stats = {
             "total_recipes": total_recipes,
             "total_favorites": total_favorites,
             "total_ratings": total_ratings,
             "total_comments": total_comments
-        })
+        }
+        
+        logger.info(f"Successfully retrieved stats for user: {current_user.email}")
+        return jsonify(stats)
     except Exception as e:
-        current_app.logger.error(f"Error getting user stats: {str(e)}")
+        logger.error(f"Error getting user stats: {str(e)}")
+        logger.exception("Full traceback:")
         return jsonify({"error": "Failed to get user stats"}), 500
 
 @bp.delete("/profile/favorites/<int:recipe_id>")
