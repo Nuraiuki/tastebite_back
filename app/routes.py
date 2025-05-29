@@ -103,11 +103,16 @@ def logout():
 
 @bp.get("/auth/check")
 def auth_check():
-    if current_user.is_authenticated:
-        logger.info(f"Auth check successful for user: {current_user.email}")
-        return current_user.to_dict()
-    logger.warning("Auth check failed - user not authenticated")
-    return {"error": "Not authenticated"}, 401
+    try:
+        if current_user.is_authenticated:
+            logger.info(f"Auth check successful for user: {current_user.email}")
+            return current_user.to_dict()
+        logger.warning("Auth check failed - user not authenticated")
+        return {"error": "Not authenticated"}, 401
+    except Exception as e:
+        logger.error(f"Auth check error: {str(e)}")
+        logger.exception("Full traceback:")
+        return {"error": "Internal server error"}, 500
 
 
 # ───────────────  Image upload  ───────────────

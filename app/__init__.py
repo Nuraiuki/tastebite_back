@@ -70,7 +70,8 @@ def create_app():
     # ───────────────  Session / CORS  ───────────────
     app.config["SESSION_COOKIE_SECURE"] = True  # Enable for HTTPS
     app.config["SESSION_COOKIE_HTTPONLY"] = True
-    app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+    app.config["SESSION_COOKIE_SAMESITE"] = "None"  # Allow cross-site cookies
+    app.config["SESSION_COOKIE_DOMAIN"] = None  # Allow any domain
 
     allowed_origins = os.getenv("ALLOWED_ORIGINS", "http://localhost:5173").split(",")
     CORS(
