@@ -105,11 +105,24 @@ def create_app():
             }
         })
 
-    # Test database connection
+    # Test database connection and tables
     with app.app_context():
         try:
+            # Test connection
             db.engine.connect()
             logger.info("Successfully connected to the database")
+            
+            # Check if tables exist
+            from .models import User, Recipe, Ingredient, Comment, Rating, Favorite
+            tables = [User, Recipe, Ingredient, Comment, Rating, Favorite]
+            for table in tables:
+                try:
+                    table.query.first()
+                    logger.info(f"Table {table.__tablename__} exists and is accessible")
+                except Exception as e:
+                    logger.error(f"Error accessing table {table.__tablename__}: {str(e)}")
+                    raise
+                    
         except Exception as e:
             logger.error(f"Failed to connect to the database: {str(e)}")
             logger.exception("Full traceback:")
