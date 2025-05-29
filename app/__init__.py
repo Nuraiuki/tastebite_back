@@ -34,13 +34,21 @@ def create_app():
     )
     os.makedirs(instance_path, exist_ok=True)
 
-    db_path = os.path.join(instance_path, 'dev.db')
-    app.config["SQLALCHEMY_DATABASE_URI"] = f"sqlite:///{db_path}"
+    # Force PostgreSQL URL
+    database_url = os.getenv("DATABASE_URL")
+    if not database_url:
+        raise ValueError("DATABASE_URL environment variable is not set!")
+    
+    # Ensure we're using PostgreSQL
+    if database_url.startswith('postgres://'):
+        database_url = database_url.replace('postgres://', 'postgresql://', 1)
+    
+    app.config["SQLALCHEMY_DATABASE_URI"] = database_url
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
     app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", "dev-secret-key")
 
     # ───────────────  Session / CORS  ───────────────
-    app.config["SESSION_COOKIE_SECURE"] = False
+    app.config["SESSION_COOKIE_SECURE"] = True  # Enable for HTTPS
     app.config["SESSION_COOKIE_HTTPONLY"] = True
     app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 
@@ -77,7 +85,7 @@ def create_app():
             "config": {
                 "database_url": app.config["SQLALCHEMY_DATABASE_URI"],
                 "instance_path": instance_path,
-                "db_path": db_path
+                "allowed_origins": allowed_origins
             }
         })
 
