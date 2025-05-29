@@ -37,103 +37,62 @@ def unauthorized():
     return jsonify({"error": "Unauthorized"}), 401
 
 
-def create_app():
-    app = Flask(__name__, static_folder='static')
-
-    # ───────────────  Paths & config  ───────────────
-    instance_path = os.path.join(
-        os.path.dirname(os.path.abspath(__file__)), '..', 'instance'
-    )
-    os.makedirs(instance_path, exist_ok=True)
-
-    # Force PostgreSQL URL
-    database_url = os.getenv("DATABASE_URL")
-    if not database_url:
-        logger.error("DATABASE_URL environment variable is not set!")
-        raise ValueError("DATABASE_URL environment variable is not set!")
+def create_app(test_config=None):
+    app = Flask(__name__, instance_relative_config=True)
     
-    # Ensure we're using PostgreSQL
-    if database_url.startswith('postgres://'):
-        database_url = database_url.replace('postgres://', 'postgresql://', 1)
-        logger.info("Converted postgres:// to postgresql://")
-    
-    # Log database URL (without password)
-    safe_url = database_url.replace(database_url.split("@")[0], "***")
-    logger.info(f"Using database: {safe_url}")
+    # Load config
+    if test_config is None:
+        app.config.from_mapping(
+            SECRET_KEY=os.environ.get('SECRET_KEY', 'dev'),
+            SQLALCHEMY_DATABASE_URI=os.environ.get('DATABASE_URL', 'sqlite:///tastebite.db'),
+            SQLALCHEMY_TRACK_MODIFICATIONS=False,
+            # Session configuration
+            SESSION_COOKIE_SECURE=True,
+            SESSION_COOKIE_HTTPONLY=True,
+            SESSION_COOKIE_SAMESITE='None',
+            SESSION_COOKIE_DOMAIN=None,
+            PERMANENT_SESSION_LIFETIME=86400  # 24 hours
+        )
+    else:
+        app.config.from_mapping(test_config)
 
-    app.config["SQLALCHEMY_DATABASE_URI"] = database_url
-    app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
-    app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", "dev-secret-key")
-    app.config["JWT_SECRET_KEY"] = os.getenv("SECRET_KEY", "dev")
-    app.config["JWT_ACCESS_TOKEN_EXPIRES"] = 86400  # 24 hours
-
-    # ───────────────  Session / CORS  ───────────────
-    app.config["SESSION_COOKIE_SECURE"] = True  # Enable for HTTPS
-    app.config["SESSION_COOKIE_HTTPONLY"] = True
-    app.config["SESSION_COOKIE_SAMESITE"] = "None"  # Allow cross-site cookies
-    app.config["SESSION_COOKIE_DOMAIN"] = None  # Allow any domain
-
-    allowed_origins = os.getenv("ALLOWED_ORIGINS", "http://localhost:5173").split(",")
-    CORS(
-        app,
-        resources={
-            r"/api/*": {
-                "origins": allowed_origins,
-                "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-                "allow_headers": ["Content-Type", "Authorization", "X-Requested-With"],
-                "expose_headers": ["Content-Type", "Authorization"],
-                "supports_credentials": True,
-                "max_age": 3600
-            }
-        },
-        supports_credentials=True
-    )
-
-    # ───────────────  Extensions  ───────────────
+    # Initialize extensions
     db.init_app(app)
     migrate.init_app(app, db)
     login_manager.init_app(app)
     login_manager.session_protection = "strong"
     jwt.init_app(app)
+    
+    # Configure CORS
+    CORS(app, 
+         resources={r"/api/*": {
+             "origins": [
+                 "http://localhost:5173",
+                 "http://localhost:3000",
+                 "https://tastebite-front.vercel.app",
+                 "https://tastebite-frontend.vercel.app"
+             ],
+             "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+             "allow_headers": ["Content-Type", "Authorization"],
+             "supports_credentials": True,
+             "expose_headers": ["Content-Type", "Authorization"],
+             "max_age": 3600
+         }},
+         supports_credentials=True
+    )
 
-    # ───────────────  Blueprints  ───────────────
+    # Register blueprints
     from .routes import bp, bp_ai
     app.register_blueprint(bp, url_prefix="/api")
-    app.register_blueprint(bp_ai)          # уже имеет url_prefix='/api/ai'
+    app.register_blueprint(bp_ai)
 
-    # ───────────────  Debug helper  ───────────────
-    @app.route("/debug")
-    def debug():
-        return jsonify({
-            "status": "ok",
-            "config": {
-                "database_url": app.config["SQLALCHEMY_DATABASE_URI"],
-                "instance_path": instance_path,
-                "allowed_origins": allowed_origins
-            }
-        })
-
-    # Test database connection and tables
+    # Create database tables
     with app.app_context():
         try:
-            # Test connection
-            db.engine.connect()
-            logger.info("Successfully connected to the database")
-            
-            # Check if tables exist
-            from .models import User, Recipe, Ingredient, Comment, Rating, Favorite
-            tables = [User, Recipe, Ingredient, Comment, Rating, Favorite]
-            for table in tables:
-                try:
-                    table.query.first()
-                    logger.info(f"Table {table.__tablename__} exists and is accessible")
-                except Exception as e:
-                    logger.error(f"Error accessing table {table.__tablename__}: {str(e)}")
-                    raise
-                    
+            db.create_all()
+            logger.info("Database tables created successfully")
         except Exception as e:
-            logger.error(f"Failed to connect to the database: {str(e)}")
-            logger.exception("Full traceback:")
+            logger.error(f"Error creating database tables: {str(e)}")
             raise
 
     return app
