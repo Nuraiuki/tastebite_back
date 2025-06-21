@@ -55,7 +55,7 @@ def create_app(test_config=None):
         )
 
         # Production-specific cookie settings for cross-domain authentication
-        if 'onrender.com' in app.config['SQLALCHEMY_DATABASE_URI']:
+        if os.environ.get('RENDER') == 'true':
             app.config.update(
                 SESSION_COOKIE_SECURE=True,
                 SESSION_COOKIE_SAMESITE='None',
