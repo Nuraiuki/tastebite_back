@@ -110,13 +110,13 @@ def create_app(test_config=None):
     app.register_blueprint(bp, url_prefix="/api")
     app.register_blueprint(bp_ai)
 
-    # Create database tables
-    with app.app_context():
-        try:
-            db.create_all()
-            logger.info("Database tables created successfully")
-        except Exception as e:
-            logger.error(f"Error creating database tables: {str(e)}")
-            raise
+    # # Create database tables
+    # with app.app_context():
+    #     try:
+    #         db.create_all()
+    #         logger.info("Database tables created successfully")
+    #     except Exception as e:
+    #         logger.error(f"Error creating database tables: {str(e)}")
+    #         raise
 
     return app
