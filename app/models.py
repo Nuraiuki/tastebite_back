@@ -4,6 +4,7 @@ import os
 
 from werkzeug.security import generate_password_hash, check_password_hash
 from flask_login import UserMixin
+from flask import url_for
 
 from . import db
 
@@ -52,13 +53,18 @@ class User(UserMixin, db.Model):
     def check_password(self, password):
         return check_password_hash(self.pw_hash, password)
 
+    @property
+    def avatar_url(self):
+        if self.avatar:
+            avatar_url = url_for('static', filename=f'avatars/{self.avatar}', _external=True)
+            # Replace localhost with the actual domain in production
+            if 'localhost' in avatar_url:
+                return avatar_url.replace('http://localhost:5000', 'https://tastebite-back.onrender.com')
+            return avatar_url
+        return None
+
     def to_dict(self):
-        avatar_url = self.avatar
-        if avatar_url and not avatar_url.startswith('http'):
-            if not avatar_url.startswith('/api'):
-                avatar_url = f"/api{avatar_url}"
-            avatar_url = f"http://localhost:5001{avatar_url}"
-            
+        avatar_url = self.avatar_url
         return {
             "id": self.id,
             "email": self.email,

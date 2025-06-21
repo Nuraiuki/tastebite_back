@@ -150,7 +150,7 @@ def upload():
         folder = os.path.join(current_app.static_folder, 'uploads')
         os.makedirs(folder, exist_ok=True)
         file.save(os.path.join(folder, name))
-        return {"url": f"http://localhost:5001/static/uploads/{name}"}
+        return {"url": f"https://tastebite-back.onrender.com/static/uploads/{name}"}
     except Exception:
         traceback.print_exc()
         return {"error": "Failed to save file"}, 500
