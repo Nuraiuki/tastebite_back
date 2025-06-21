@@ -52,17 +52,33 @@ def create_app(test_config=None):
             SQLALCHEMY_TRACK_MODIFICATIONS=False,
             UPLOAD_FOLDER=uploads_dir,
             MAX_CONTENT_LENGTH=16 * 1024 * 1024,  # 16MB max file size
-            # Session configuration
-            SESSION_COOKIE_SECURE=False,  # Set to False for local development
+        )
+
+        # Production-specific cookie settings for cross-domain authentication
+        if 'onrender.com' in app.config['SQLALCHEMY_DATABASE_URI']:
+            app.config.update(
+                SESSION_COOKIE_SECURE=True,
+                SESSION_COOKIE_SAMESITE='None',
+                REMEMBER_COOKIE_SECURE=True,
+                REMEMBER_COOKIE_SAMESITE='None',
+            )
+        else:
+            # Development settings
+            app.config.update(
+                SESSION_COOKIE_SECURE=False,
+                SESSION_COOKIE_SAMESITE='Lax',
+                REMEMBER_COOKIE_SECURE=False,
+                REMEMBER_COOKIE_SAMESITE='Lax',
+            )
+        
+        app.config.update(
+            # Common session settings
             SESSION_COOKIE_HTTPONLY=True,
-            SESSION_COOKIE_SAMESITE='Lax',  # Changed to Lax for local development
             SESSION_COOKIE_DOMAIN=None,
             PERMANENT_SESSION_LIFETIME=86400,  # 24 hours
-            SESSION_REFRESH_EACH_REQUEST=True,  # Refresh session on each request
-            # Login manager configuration
-            REMEMBER_COOKIE_SECURE=False,  # Set to False for local development
+            SESSION_REFRESH_EACH_REQUEST=True,
+            # Common remember cookie settings
             REMEMBER_COOKIE_HTTPONLY=True,
-            REMEMBER_COOKIE_SAMESITE='Lax',  # Changed to Lax for local development
             REMEMBER_COOKIE_DOMAIN=None
         )
     else:
