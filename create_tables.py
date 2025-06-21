@@ -3,9 +3,5 @@ from app.models import User, Recipe, Ingredient, Comment, Rating, Favorite, Exte
 
 app = create_app()
 with app.app_context():
-    try:
-        # Create all tables
-        db.create_all()
-        print("Successfully created all tables!")
-    except Exception as e:
-        print(f"Error creating tables: {e}") 
+    db.create_all()
+    print('All tables created!') 

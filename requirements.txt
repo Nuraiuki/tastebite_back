@@ -13,4 +13,3 @@ gunicorn==21.2.0
 SQLAlchemy==2.0.28
 alembic==1.13.1
 python-jose==3.3.0
-Pillow==10.2.0

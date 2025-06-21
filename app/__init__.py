@@ -40,18 +40,30 @@ def unauthorized():
 def create_app(test_config=None):
     app = Flask(__name__, instance_relative_config=True)
     
+    # Create uploads directory
+    uploads_dir = os.path.join(app.instance_path, 'uploads')
+    os.makedirs(uploads_dir, exist_ok=True)
+    
     # Load config
     if test_config is None:
         app.config.from_mapping(
             SECRET_KEY=os.environ.get('SECRET_KEY', 'dev'),
             SQLALCHEMY_DATABASE_URI=os.environ.get('DATABASE_URL', 'sqlite:///tastebite.db'),
             SQLALCHEMY_TRACK_MODIFICATIONS=False,
+            UPLOAD_FOLDER=uploads_dir,
+            MAX_CONTENT_LENGTH=16 * 1024 * 1024,  # 16MB max file size
             # Session configuration
-            SESSION_COOKIE_SECURE=True,
+            SESSION_COOKIE_SECURE=False,  # Set to False for local development
             SESSION_COOKIE_HTTPONLY=True,
-            SESSION_COOKIE_SAMESITE='None',
+            SESSION_COOKIE_SAMESITE='Lax',  # Changed to Lax for local development
             SESSION_COOKIE_DOMAIN=None,
-            PERMANENT_SESSION_LIFETIME=86400  # 24 hours
+            PERMANENT_SESSION_LIFETIME=86400,  # 24 hours
+            SESSION_REFRESH_EACH_REQUEST=True,  # Refresh session on each request
+            # Login manager configuration
+            REMEMBER_COOKIE_SECURE=False,  # Set to False for local development
+            REMEMBER_COOKIE_HTTPONLY=True,
+            REMEMBER_COOKIE_SAMESITE='Lax',  # Changed to Lax for local development
+            REMEMBER_COOKIE_DOMAIN=None
         )
     else:
         app.config.from_mapping(test_config)
@@ -61,6 +73,7 @@ def create_app(test_config=None):
     migrate.init_app(app, db)
     login_manager.init_app(app)
     login_manager.session_protection = "strong"
+    login_manager.login_view = None  # Disable redirect to login view
     jwt.init_app(app)
     
     # Configure CORS
@@ -68,9 +81,7 @@ def create_app(test_config=None):
          resources={r"/api/*": {
              "origins": [
                  "http://localhost:5173",
-                 "http://localhost:3000",
-                 "https://tastebite-front.vercel.app",
-                 "https://tastebite-frontend.vercel.app"
+                 "http://localhost:3000"
              ],
              "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
              "allow_headers": [

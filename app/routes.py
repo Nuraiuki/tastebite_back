@@ -1,5 +1,5 @@
 # app/routes.py
-from flask import Blueprint, request, jsonify, abort, current_app
+from flask import Blueprint, request, jsonify, abort, current_app, send_from_directory
 from flask_login import login_user, logout_user, login_required, current_user
 from werkzeug.utils import secure_filename
 from datetime import datetime
@@ -8,6 +8,8 @@ import requests
 import json
 import os
 import logging
+import time
+from sqlalchemy import func
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -15,15 +17,26 @@ logger = logging.getLogger(__name__)
 from .models import (
     db, Recipe, Ingredient, User,
     Comment, Rating, Favorite,
+    ExternalFavorite, ExternalRating, ExternalComment, ShoppingListItem,
+    SharedShoppingList
 )
 from .utils.openai_client import get_openai_client
 
-# ───────────────────────────────────────────────────────────────
-#  Main blueprint
-# ───────────────────────────────────────────────────────────────
 bp = Blueprint("recipes", __name__)
+bp_ai = Blueprint("ai", __name__, url_prefix="/api/ai")
 
 ALLOWED_EXT = {'png', 'jpg', 'jpeg', 'gif'}
+AREAS = [
+    "American", "British", "Canadian", "Chinese", "Croatian", "Dutch", 
+    "Egyptian", "Filipino", "French", "Greek", "Indian", "Irish", "Italian", 
+    "Jamaican", "Japanese", "Kenyan", "Malaysian", "Mexican", "Moroccan", 
+    "Polish", "Portuguese", "Russian", "Spanish", "Thai", "Tunisian", 
+    "Turkish", "Ukrainian", "Uruguayan", "Vietnamese"
+]
+CATEGORIES = [
+    "Beef", "Chicken", "Dessert", "Lamb", "Miscellaneous", "Pasta", "Pork", 
+    "Seafood", "Side", "Starter", "Vegan", "Vegetarian", "Breakfast", "Goat"
+]
 
 
 def allowed_file(fname: str) -> bool:
@@ -106,7 +119,12 @@ def auth_check():
     try:
         if current_user.is_authenticated:
             logger.info(f"Auth check successful for user: {current_user.email}")
-            return current_user.to_dict()
+            # Добавляем дополнительную проверку сессии
+            user = User.query.get(current_user.id)
+            if not user:
+                logout_user()
+                return {"error": "User not found"}, 401
+            return user.to_dict()
         logger.warning("Auth check failed - user not authenticated")
         return {"error": "Not authenticated"}, 401
     except Exception as e:
@@ -171,36 +189,37 @@ def one_recipe(rid):
 @bp.post("/recipes")
 @login_required
 def create_recipe():
-    data = request.get_json() or {}
-    ingredients = data.get("ingredients", [])
-    print("Received ingredients:", ingredients)
-    normalized_ingredients = []
-    for ing in ingredients:
-        if isinstance(ing, dict):
-            name = ing.get("name", "")
-            measure = ing.get("measure", "")
-        elif isinstance(ing, str):
-            name = ing
-            measure = ""
-        else:
-            continue  # skip invalid entries
-        normalized_ingredients.append({"name": name, "measure": measure})
-
-    rec = Recipe(
-        title=data["title"],
-        category=data.get("category"),
-        area=data.get("area"),
-        instructions=data["instructions"],
-        image_url=data.get("image_url"),
-        user_id=current_user.id
+    data = request.get_json()
+    new_recipe = Recipe(
+        title=data['title'],
+        category=data['category'],
+        area=data['area'],
+        instructions=data['instructions'],  # Ensure this is handled as Text
+        image_url=data['image_url'],
+        user_id=current_user.id,
+        is_external=False
     )
-    for ing in normalized_ingredients:
-        rec.ingredients.append(
-            Ingredient(name=ing["name"], measure=ing.get("measure", ""))
-        )
-    db.session.add(rec)
+    
+    # Add ingredients
+    if "ingredients" in data:
+        for ing in data["ingredients"]:
+            if isinstance(ing, dict):
+                name = ing.get("name", "")
+                measure = ing.get("measure", "")
+            elif isinstance(ing, str):
+                name = ing
+                measure = ""
+            else:
+                continue
+            
+            if name:  # Only add if name is not empty
+                new_recipe.ingredients.append(
+                    Ingredient(name=name, measure=measure)
+                )
+    
+    db.session.add(new_recipe)
     db.session.commit()
-    return rec.to_dict(), 201
+    return jsonify(new_recipe.to_dict()), 201
 
 
 @bp.put("/recipes/<int:rid>")
@@ -309,7 +328,8 @@ def get_recipe_comments(rid):
             "user": {
                 "id": comment.user.id,
                 "name": comment.user.name,
-                "email": comment.user.email
+                "email": comment.user.email,
+                "avatar": comment.user.avatar
             }
         } for comment in comments])
     except Exception as e:
@@ -344,7 +364,8 @@ def add_recipe_comment(rid):
             "user": {
                 "id": current_user.id,
                 "name": current_user.name,
-                "email": current_user.email
+                "email": current_user.email,
+                "avatar": current_user.avatar
             }
         })
     except Exception as e:
@@ -439,6 +460,7 @@ def get_profile():
             "id": user.id,
             "name": user.name,
             "email": user.email,
+            "avatar": user.avatar,
             "is_admin": user.is_admin
         }
         logger.info(f"Successfully retrieved profile for user: {user.email}")
@@ -447,6 +469,60 @@ def get_profile():
         logger.error(f"Error getting profile: {str(e)}")
         logger.exception("Full traceback:")
         return jsonify({"error": "Internal server error"}), 500
+
+@bp.route("/profile", methods=["GET", "PUT"])
+@login_required
+def profile():
+    if request.method == "GET":
+        return jsonify(current_user.to_dict())
+
+    try:
+        # Обновление имени и email
+        if "name" in request.form:
+            current_user.name = request.form["name"]
+        if "email" in request.form:
+            current_user.email = request.form["email"]
+
+        # Обновление пароля
+        if "newPassword" in request.form:
+            new_password = request.form["newPassword"]
+            if new_password:
+                current_user.set_password(new_password)
+
+        # Обновление аватара
+        if "avatar" in request.files:
+            avatar = request.files["avatar"]
+            if avatar and avatar.filename:
+                if not allowed_file(avatar.filename):
+                    return jsonify({"error": "Invalid file type"}), 400
+                    
+                # Создаем уникальное имя файла
+                timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+                filename = f"{current_user.id}_{timestamp}_{secure_filename(avatar.filename)}"
+                
+                # Убедимся, что директория существует
+                upload_folder = os.path.join(current_app.root_path, 'static', 'uploads')
+                os.makedirs(upload_folder, exist_ok=True)
+                
+                # Полный путь к файлу
+                avatar_path = os.path.join(upload_folder, filename)
+                
+                # Сохраняем файл
+                avatar.save(avatar_path)
+                
+                # Обновляем путь к аватару в базе данных
+                current_user.avatar = f"/api/static/uploads/{filename}"
+                
+                logger.info(f"Avatar updated for user {current_user.id}: {current_user.avatar}")
+
+        db.session.commit()
+        return jsonify(current_user.to_dict())
+
+    except Exception as e:
+        db.session.rollback()
+        logger.error(f"Error updating profile: {str(e)}")
+        logger.exception("Full traceback:")
+        return jsonify({"error": "Failed to update profile"}), 500
 
 @bp.get("/profile/recipes")
 @login_required
@@ -688,21 +764,37 @@ def get_admin_stats():
         return jsonify({"error": "Unauthorized"}), 403
     
     try:
+        # Get total users
         total_users = User.query.count()
-        # Count only created recipes
+        
+        # Get total created recipes
         total_created_recipes = Recipe.query.filter_by(is_external=False).count()
-        # Count all recipes including MealDB
-        total_all_recipes = Recipe.query.count()
+        
+        # Get total external recipes
+        total_external_recipes = Recipe.query.filter_by(is_external=True).count()
+        
+        # Get total recipes (created + external)
+        total_recipes = total_created_recipes + total_external_recipes
+        
+        # Get total ratings
         total_ratings = Rating.query.count()
+        
+        # Get total favorites
         total_favorites = Favorite.query.count()
+        
+        # Get total comments
         total_comments = Comment.query.count()
         
-        # Get most active users (only counting created recipes)
+        # Calculate average rating using the correct field name 'value'
+        avg_rating = db.session.query(func.avg(Rating.value)).scalar() or 0
+
+        # Get most active users
         users = User.query.all()
         active_users = sorted(
             [{
                 "id": u.id,
                 "name": u.name,
+                "email": u.email,
                 "recipes_count": Recipe.query.filter_by(user_id=u.id, is_external=False).count(),
                 "ratings_count": Rating.query.filter_by(user_id=u.id).count(),
                 "favorites_count": Favorite.query.filter_by(user_id=u.id).count()
@@ -712,13 +804,15 @@ def get_admin_stats():
         )[:5]
         
         return jsonify({
-            "total_users": total_users,
-            "total_created_recipes": total_created_recipes,
-            "total_all_recipes": total_all_recipes,
-            "total_ratings": total_ratings,
-            "total_favorites": total_favorites,
-            "total_comments": total_comments,
-            "active_users": active_users
+            'total_users': total_users,
+            'total_recipes': total_recipes,
+            'user_created_recipes': total_created_recipes,
+            'external_recipes': total_external_recipes,
+            'total_ratings': total_ratings,
+            'total_favorites': total_favorites,
+            'total_comments': total_comments,
+            'average_rating': float(avg_rating),
+            'active_users': active_users
         })
     except Exception as e:
         current_app.logger.error(f"Error getting admin stats: {str(e)}")
@@ -760,9 +854,6 @@ def toggle_admin_status(user_id):
 # ───────────────────────────────────────────────────────────────
 #  AI Blueprint
 # ───────────────────────────────────────────────────────────────
-bp_ai = Blueprint("ai", __name__, url_prefix="/api/ai")
-
-
 @bp_ai.post("/generate-recipe")
 @login_required          # уберите, если гостям тоже можно
 def ai_generate():
@@ -771,11 +862,20 @@ def ai_generate():
     if not items:
         return {"error": "No ingredients provided"}, 400
 
+    areas_str = ", ".join(AREAS)
+    categories_str = ", ".join(CATEGORIES)
+    ingredients_str = ", ".join(items)
+
     prompt = (
-        "Составь подробный домашний рецепт, используя только эти продукты: "
-        f"{', '.join(items)}. "
-        "Верни JSON с полями title, category, area, ingredients (list) "
-        "и instructions. Без комментариев."
+        f"Based on the following ingredients: {ingredients_str}. "
+        f"Generate a detailed recipe. The entire response, including title and instructions, "
+        f"must be in the same language as the ingredients provided. "
+        f"Return a JSON object with the fields: 'title' (string), 'category' (string), "
+        f"'area' (string), 'ingredients' (a list of objects, where each object has 'name' and 'measure' keys), "
+        f"and 'instructions' (string with steps separated by '\\n'). "
+        f"The 'category' value must be one of the following: {categories_str}. "
+        f"The 'area' value must be one of the following: {areas_str}. "
+        f"The JSON response should not contain any comments."
     )
 
     try:
@@ -786,7 +886,13 @@ def ai_generate():
             messages=[{"role": "user", "content": prompt}],
             response_format={"type": "json_object"},
         )
-        return json.loads(rsp.choices[0].message.content)
+        recipe_data = json.loads(rsp.choices[0].message.content)
+
+        # Убедимся, что instructions - это строка
+        if isinstance(recipe_data.get("instructions"), list):
+            recipe_data["instructions"] = "\\n".join(map(str, recipe_data["instructions"]))
+        
+        return jsonify(recipe_data)
     except Exception as e:
         traceback.print_exc()
         return {"error": str(e)}, 500
@@ -841,6 +947,168 @@ def import_external_recipe():
         db.session.rollback()
         return jsonify({"error": "Failed to import recipe"}), 500
 
+
+@bp.route('/static/uploads/<filename>')
+def uploaded_file(filename):
+    """Serve uploaded files"""
+    return send_from_directory(os.path.join(current_app.root_path, 'static', 'uploads'), filename)
+
+
+@bp.get("/users/<int:user_id>")
+def get_user_profile(user_id):
+    """Get another user's profile"""
+    try:
+        user = User.query.get(user_id)
+        if not user:
+            return jsonify({"error": "User not found"}), 404
+        
+        profile_data = {
+            "id": user.id,
+            "name": user.name,
+            "avatar": user.avatar,
+            "created": user.created_at.isoformat() if hasattr(user, 'created_at') else None
+        }
+        return jsonify(profile_data)
+    except Exception as e:
+        logger.error(f"Error getting user profile: {str(e)}")
+        logger.exception("Full traceback:")
+        return jsonify({"error": "Internal server error"}), 500
+
+@bp.get("/users/<int:user_id>/recipes")
+def get_other_user_recipes(user_id):
+    """Get recipes created by another user"""
+    try:
+        recipes = Recipe.query.filter_by(
+            user_id=user_id,
+            is_external=False
+        ).all()
+        return jsonify([recipe.to_dict() for recipe in recipes])
+    except Exception as e:
+        logger.error(f"Error getting user recipes: {str(e)}")
+        return jsonify({"error": "Internal server error"}), 500
+
+# ─────────────── Shopping List ───────────────
+
+@bp.get("/shopping-list")
+@login_required
+def get_shopping_list():
+    """Get all items in the user's shopping list"""
+    items = ShoppingListItem.query.filter_by(user_id=current_user.id).all()
+    return jsonify([item.to_dict() for item in items])
+
+@bp.post("/shopping-list/add-recipe/<int:recipe_id>")
+@login_required
+def add_recipe_to_shopping_list(recipe_id):
+    """Add all ingredients from a recipe to the shopping list, merging duplicates."""
+    recipe = Recipe.query.get_or_404(recipe_id)
+    
+    # Получаем текущий список покупок пользователя
+    shopping_list_items = ShoppingListItem.query.filter_by(user_id=current_user.id).all()
+    # Создаем словарь для быстрого доступа по имени ингредиента
+    current_shopping_list = {item.name.lower(): item for item in shopping_list_items}
+    
+    added_count = 0
+    updated_count = 0
+
+    for ingredient in recipe.ingredients:
+        item_name_lower = ingredient.name.lower()
+        
+        if item_name_lower in current_shopping_list:
+            # Ингредиент уже есть - обновляем его
+            existing_item = current_shopping_list[item_name_lower]
+            
+            # Обновляем список названий
+            titles = existing_item.recipe_titles.split('; ') if existing_item.recipe_titles else []
+            if recipe.title not in titles:
+                titles.append(recipe.title)
+                existing_item.recipe_titles = "; ".join(titles)
+
+            # Обновляем список ID
+            ids = existing_item.recipe_ids.split('; ') if existing_item.recipe_ids else []
+            if str(recipe.id) not in ids:
+                ids.append(str(recipe.id))
+                existing_item.recipe_ids = "; ".join(ids)
+
+            # Обновляем список мер
+            measures = existing_item.measure.split('; ') if existing_item.measure else []
+            if ingredient.measure and ingredient.measure not in measures:
+                measures.append(ingredient.measure)
+                existing_item.measure = "; ".join(measures)
+            
+            updated_count += 1
+        else:
+            # Ингредиента нет - создаем новый
+            item = ShoppingListItem(
+                name=ingredient.name,
+                measure=ingredient.measure or '',
+                recipe_titles=recipe.title,
+                recipe_ids=str(recipe.id),
+                user_id=current_user.id
+            )
+            db.session.add(item)
+            added_count += 1
+    
+    db.session.commit()
+    
+    return jsonify({
+        "message": f"Shopping list updated: {added_count} new items added, {updated_count} items updated."
+    })
+
+@bp.delete("/shopping-list")
+@login_required
+def clear_shopping_list():
+    """Clear all items from the user's shopping list"""
+    ShoppingListItem.query.filter_by(user_id=current_user.id).delete()
+    db.session.commit()
+    return jsonify({"message": "Shopping list cleared."})
+
+@bp.delete("/shopping-list/<int:item_id>")
+@login_required
+def delete_shopping_list_item(item_id):
+    """Delete a specific item from the shopping list"""
+    item = ShoppingListItem.query.filter_by(id=item_id, user_id=current_user.id).first_or_404()
+    db.session.delete(item)
+    db.session.commit()
+    return jsonify({"message": "Item removed from shopping list."})
+
+@bp.put("/shopping-list/<int:item_id>/toggle")
+@login_required
+def toggle_shopping_list_item(item_id):
+    """Toggle the is_checked status of a shopping list item"""
+    item = ShoppingListItem.query.filter_by(id=item_id, user_id=current_user.id).first_or_404()
+    item.is_checked = not item.is_checked
+    db.session.commit()
+    return jsonify(item.to_dict())
+
+# ─────────────── Sharing ───────────────
+
+@bp.post("/shopping-list/share")
+@login_required
+def share_shopping_list():
+    """Generate a shareable link for the user's shopping list."""
+    # Ищем существующую ссылку или создаем новую
+    shared_list = SharedShoppingList.query.filter_by(user_id=current_user.id).first()
+    if not shared_list:
+        shared_list = SharedShoppingList(user_id=current_user.id)
+        db.session.add(shared_list)
+        db.session.commit()
+    return jsonify(shared_list.to_dict())
+
+@bp.get("/public/shopping-list/<string:token>")
+def get_public_shopping_list(token):
+    """Get a shopping list via a public token."""
+    shared_list = SharedShoppingList.query.filter_by(token=token).first_or_404()
+    
+    # Получаем сам список покупок
+    items = ShoppingListItem.query.filter_by(user_id=shared_list.user_id).all()
+    
+    # Получаем имя владельца списка
+    owner_name = shared_list.user.name
+    
+    return jsonify({
+        "owner_name": owner_name,
+        "items": [item.to_dict() for item in items]
+    })
 
 # экспорт для create_app
 __all__ = ["bp", "bp_ai"]

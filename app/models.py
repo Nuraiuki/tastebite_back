@@ -1,4 +1,6 @@
 from datetime import datetime
+import uuid
+import os
 
 from werkzeug.security import generate_password_hash, check_password_hash
 from flask_login import UserMixin
@@ -15,6 +17,7 @@ class User(UserMixin, db.Model):
     email = db.Column(db.String(120), unique=True, nullable=False)
     pw_hash = db.Column(db.String(256), nullable=False)
     name = db.Column(db.String(100), nullable=False)
+    avatar = db.Column(db.Text, nullable=True)
     created = db.Column(db.DateTime, default=datetime.utcnow)
     is_system = db.Column(db.Boolean, default=False)
     is_admin = db.Column(db.Boolean, default=False)
@@ -50,10 +53,17 @@ class User(UserMixin, db.Model):
         return check_password_hash(self.pw_hash, password)
 
     def to_dict(self):
+        avatar_url = self.avatar
+        if avatar_url and not avatar_url.startswith('http'):
+            if not avatar_url.startswith('/api'):
+                avatar_url = f"/api{avatar_url}"
+            avatar_url = f"http://localhost:5001{avatar_url}"
+            
         return {
             "id": self.id,
             "email": self.email,
             "name": self.name,
+            "avatar": avatar_url,
             "created": self.created.isoformat(),
             "is_admin": self.is_admin,
         }
@@ -70,7 +80,7 @@ class Recipe(db.Model):
     category = db.Column(db.String(80))
     area = db.Column(db.String(80))
     instructions = db.Column(db.Text, nullable=False)
-    image_url = db.Column(db.String(250))
+    image_url = db.Column(db.Text)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     user_id = db.Column(
@@ -278,3 +288,57 @@ class Tag(db.Model):
 
     def to_dict(self):
         return {"id": self.id, "name": self.name}
+
+# ───────────────────────────────────────────────────────────────
+#  Список покупок
+# ───────────────────────────────────────────────────────────────
+class ShoppingListItem(db.Model):
+    __tablename__ = "shopping_list_item"
+
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(100), nullable=False)
+    measure = db.Column(db.String(200))
+    recipe_titles = db.Column(db.Text)
+    recipe_ids = db.Column(db.Text)
+    is_checked = db.Column(db.Boolean, default=False, nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    def to_dict(self):
+        titles = self.recipe_titles.split('; ') if self.recipe_titles else []
+        ids = self.recipe_ids.split('; ') if self.recipe_ids else []
+        
+        # Убедимся, что у нас есть ID для каждого названия
+        recipe_details = []
+        for i, title in enumerate(titles):
+            if i < len(ids):
+                recipe_details.append({"id": ids[i], "title": title})
+            else:
+                # Для старых записей, где ID может отсутствовать
+                recipe_details.append({"id": None, "title": title})
+
+        return {
+            'id': self.id,
+            'name': self.name,
+            'measure': self.measure,
+            'recipe_details': recipe_details,
+            'is_checked': self.is_checked,
+            'user_id': self.user_id
+        }
+
+class SharedShoppingList(db.Model):
+    __tablename__ = "shared_shopping_list"
+
+    id = db.Column(db.Integer, primary_key=True)
+    token = db.Column(db.String(36), unique=True, nullable=False, default=lambda: str(uuid.uuid4()))
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), unique=True, nullable=False)
+    user = db.relationship('User', backref=db.backref('shared_list', uselist=False))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    def to_dict(self):
+        # Важно: URL фронтенда может отличаться. Пока используем стандартный.
+        frontend_url = os.environ.get('FRONTEND_URL', 'http://localhost:5173')
+        return {
+            'token': self.token,
+            'share_url': f"{frontend_url}/list/{self.token}"
+        }
