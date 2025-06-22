@@ -54,31 +54,65 @@ def create_app(test_config=None):
             MAX_CONTENT_LENGTH=16 * 1024 * 1024,  # 16MB max file size
         )
 
+        # Configure CORS
+        CORS(app, 
+             resources={r"/api/*": {
+                 "origins": [
+                     "http://localhost:5173",
+                     "http://localhost:3000",
+                     "https://tastebite-front.vercel.app"
+                 ],
+                 "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+                 "allow_headers": [
+                     "Content-Type",
+                     "Authorization",
+                     "Accept",
+                     "Origin",
+                     "X-Requested-With",
+                     "Access-Control-Request-Method",
+                     "Access-Control-Request-Headers",
+                     "X-CSRF-TOKEN"
+                 ],
+                 "supports_credentials": True,
+                 "expose_headers": [
+                     "Content-Type",
+                     "Authorization",
+                     "Access-Control-Allow-Origin",
+                     "Access-Control-Allow-Credentials",
+                     "Set-Cookie"
+                 ],
+                 "max_age": 3600
+             }},
+             supports_credentials=True
+        )
+
         # Production-specific cookie settings for cross-domain authentication
         if os.environ.get('RENDER') == 'true':
             app.config.update(
                 SESSION_COOKIE_SECURE=True,
                 SESSION_COOKIE_SAMESITE='None',
+                SESSION_COOKIE_HTTPONLY=False,  # Allow JavaScript access for mobile
                 REMEMBER_COOKIE_SECURE=True,
                 REMEMBER_COOKIE_SAMESITE='None',
+                REMEMBER_COOKIE_HTTPONLY=False,  # Allow JavaScript access for mobile
             )
         else:
             # Development settings
             app.config.update(
                 SESSION_COOKIE_SECURE=False,
                 SESSION_COOKIE_SAMESITE='Lax',
+                SESSION_COOKIE_HTTPONLY=True,
                 REMEMBER_COOKIE_SECURE=False,
                 REMEMBER_COOKIE_SAMESITE='Lax',
+                REMEMBER_COOKIE_HTTPONLY=True,
             )
         
         app.config.update(
             # Common session settings
-            SESSION_COOKIE_HTTPONLY=True,
             SESSION_COOKIE_DOMAIN=None,
             PERMANENT_SESSION_LIFETIME=86400,  # 24 hours
             SESSION_REFRESH_EACH_REQUEST=True,
             # Common remember cookie settings
-            REMEMBER_COOKIE_HTTPONLY=True,
             REMEMBER_COOKIE_DOMAIN=None
         )
     else:
@@ -92,36 +126,6 @@ def create_app(test_config=None):
     login_manager.login_view = None  # Disable redirect to login view
     jwt.init_app(app)
     
-    # Configure CORS
-    CORS(app, 
-         resources={r"/api/*": {
-             "origins": [
-                 "http://localhost:5173",
-                 "http://localhost:3000",
-                 "https://tastebite-front.vercel.app"
-             ],
-             "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-             "allow_headers": [
-                 "Content-Type",
-                 "Authorization",
-                 "Accept",
-                 "Origin",
-                 "X-Requested-With",
-                 "Access-Control-Request-Method",
-                 "Access-Control-Request-Headers"
-             ],
-             "supports_credentials": True,
-             "expose_headers": [
-                 "Content-Type",
-                 "Authorization",
-                 "Access-Control-Allow-Origin",
-                 "Access-Control-Allow-Credentials"
-             ],
-             "max_age": 3600
-         }},
-         supports_credentials=True
-    )
-
     # Register blueprints
     from .routes import bp, bp_ai
     app.register_blueprint(bp, url_prefix="/api")
