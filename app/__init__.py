@@ -91,12 +91,12 @@ def create_app(test_config=None):
             app.config.update(
                 SESSION_COOKIE_SECURE=True,
                 SESSION_COOKIE_SAMESITE='None',
-                SESSION_COOKIE_HTTPONLY=False,  # Allow JavaScript access for mobile
-                SESSION_COOKIE_DOMAIN=None,  # Let browser handle domain
+                SESSION_COOKIE_HTTPONLY=True,  # Try with HttpOnly=True
+                SESSION_COOKIE_DOMAIN=None,
                 REMEMBER_COOKIE_SECURE=True,
                 REMEMBER_COOKIE_SAMESITE='None',
-                REMEMBER_COOKIE_HTTPONLY=False,  # Allow JavaScript access for mobile
-                REMEMBER_COOKIE_DOMAIN=None,  # Let browser handle domain
+                REMEMBER_COOKIE_HTTPONLY=True,  # Try with HttpOnly=True
+                REMEMBER_COOKIE_DOMAIN=None,
             )
         else:
             # Development settings

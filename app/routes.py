@@ -99,9 +99,35 @@ def login():
     data = request.get_json() or {}
     user = User.query.filter_by(email=data.get("email")).first()
     if user and user.check_password(data.get("password")):
-        login_user(user)
+        login_user(user, remember=True)  # Add remember=True for longer session
         logger.info(f"User logged in: {user.email}")
-        return user.to_dict()
+        
+        # Create response with user data
+        response = jsonify(user.to_dict())
+        
+        # Add explicit cookie setting for debugging
+        if os.environ.get('RENDER') == 'true':
+            response.set_cookie(
+                'session_debug',
+                'logged_in',
+                max_age=86400,
+                secure=True,
+                samesite='None',
+                httponly=False
+            )
+            logger.info("Set debug cookie for production")
+        else:
+            response.set_cookie(
+                'session_debug',
+                'logged_in',
+                max_age=86400,
+                secure=False,
+                samesite='Lax',
+                httponly=False
+            )
+            logger.info("Set debug cookie for development")
+        
+        return response
     logger.warning(f"Failed login attempt for email: {data.get('email')}")
     return {"error": "Invalid email or password"}, 401
 
@@ -117,6 +143,11 @@ def logout():
 @bp.get("/auth/check")
 def auth_check():
     try:
+        # Log all cookies for debugging
+        logger.info(f"Auth check - All cookies: {dict(request.cookies)}")
+        logger.info(f"Auth check - User agent: {request.headers.get('User-Agent')}")
+        logger.info(f"Auth check - Origin: {request.headers.get('Origin')}")
+        
         if current_user.is_authenticated:
             logger.info(f"Auth check successful for user: {current_user.email}")
             # Добавляем дополнительную проверку сессии
@@ -126,6 +157,8 @@ def auth_check():
                 return {"error": "User not found"}, 401
             return user.to_dict()
         logger.warning("Auth check failed - user not authenticated")
+        logger.warning(f"Current user: {current_user}")
+        logger.warning(f"Session data: {dict(session)}")
         return {"error": "Not authenticated"}, 401
     except Exception as e:
         logger.error(f"Auth check error: {str(e)}")
