@@ -92,9 +92,11 @@ def create_app(test_config=None):
                 SESSION_COOKIE_SECURE=True,
                 SESSION_COOKIE_SAMESITE='None',
                 SESSION_COOKIE_HTTPONLY=False,  # Allow JavaScript access for mobile
+                SESSION_COOKIE_DOMAIN=None,  # Let browser handle domain
                 REMEMBER_COOKIE_SECURE=True,
                 REMEMBER_COOKIE_SAMESITE='None',
                 REMEMBER_COOKIE_HTTPONLY=False,  # Allow JavaScript access for mobile
+                REMEMBER_COOKIE_DOMAIN=None,  # Let browser handle domain
             )
         else:
             # Development settings
@@ -102,18 +104,17 @@ def create_app(test_config=None):
                 SESSION_COOKIE_SECURE=False,
                 SESSION_COOKIE_SAMESITE='Lax',
                 SESSION_COOKIE_HTTPONLY=True,
+                SESSION_COOKIE_DOMAIN=None,
                 REMEMBER_COOKIE_SECURE=False,
                 REMEMBER_COOKIE_SAMESITE='Lax',
                 REMEMBER_COOKIE_HTTPONLY=True,
+                REMEMBER_COOKIE_DOMAIN=None,
             )
         
         app.config.update(
             # Common session settings
-            SESSION_COOKIE_DOMAIN=None,
             PERMANENT_SESSION_LIFETIME=86400,  # 24 hours
             SESSION_REFRESH_EACH_REQUEST=True,
-            # Common remember cookie settings
-            REMEMBER_COOKIE_DOMAIN=None
         )
     else:
         app.config.from_mapping(test_config)
