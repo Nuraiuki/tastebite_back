@@ -1,5 +1,5 @@
 # app/routes.py
-from flask import Blueprint, request, jsonify, abort, current_app, send_from_directory, session
+from flask import Blueprint, request, jsonify, abort, current_app, send_from_directory
 from flask_login import login_user, logout_user, login_required, current_user
 from werkzeug.utils import secure_filename
 from datetime import datetime
@@ -13,26 +13,6 @@ from sqlalchemy import func
 
 # Configure logging
 logger = logging.getLogger(__name__)
-
-def jwt_auth_required(f):
-    """Custom decorator to handle JWT authentication"""
-    from functools import wraps
-    from flask_jwt_extended import get_jwt_identity
-    from flask import g
-    
-    @wraps(f)
-    def decorated_function(*args, **kwargs):
-        try:
-            user_id = get_jwt_identity()
-            user = User.query.get(user_id)
-            if not user:
-                return {"error": "User not found"}, 401
-            g.current_user = user
-            return f(*args, **kwargs)
-        except Exception as e:
-            logger.warning(f"JWT authentication failed: {str(e)}")
-            return {"error": "Authentication required"}, 401
-    return decorated_function
 
 from .models import (
     db, Recipe, Ingredient, User,
@@ -119,54 +99,67 @@ def login():
     data = request.get_json() or {}
     user = User.query.filter_by(email=data.get("email")).first()
     if user and user.check_password(data.get("password")):
-        # Create JWT token
-        access_token = create_access_token(identity=user.id)
-        
+        login_user(user, remember=True)  # Add remember=True for longer session
         logger.info(f"User logged in: {user.email}")
         
-        # Return user data with JWT token
-        user_data = user.to_dict()
-        user_data['access_token'] = access_token
+        # Create response with user data
+        response = jsonify(user.to_dict())
         
-        return user_data
+        # Add explicit cookie setting for debugging
+        if os.environ.get('RENDER') == 'true':
+            response.set_cookie(
+                'session_debug',
+                'logged_in',
+                max_age=86400,
+                secure=True,
+                samesite='None',
+                httponly=False
+            )
+            logger.info("Set debug cookie for production")
+        else:
+            response.set_cookie(
+                'session_debug',
+                'logged_in',
+                max_age=86400,
+                secure=False,
+                samesite='Lax',
+                httponly=False
+            )
+            logger.info("Set debug cookie for development")
+        
+        return response
     logger.warning(f"Failed login attempt for email: {data.get('email')}")
     return {"error": "Invalid email or password"}, 401
 
 
 @bp.post("/auth/logout")
-@jwt_auth_required
+@login_required
 def logout():
-    logger.info(f"User logged out: {g.current_user.email}")
+    logger.info(f"User logged out: {current_user.email}")
+    logout_user()
     return {"message": "Logged out"}
 
 
 @bp.get("/auth/check")
 def auth_check():
     try:
-        # Log headers for debugging
-        auth_header = request.headers.get('Authorization')
-        logger.info(f"Auth check - Authorization header: {auth_header}")
+        # Log all cookies for debugging
+        logger.info(f"Auth check - All cookies: {dict(request.cookies)}")
         logger.info(f"Auth check - User agent: {request.headers.get('User-Agent')}")
         logger.info(f"Auth check - Origin: {request.headers.get('Origin')}")
         
-        if auth_header and auth_header.startswith('Bearer '):
-            try:
-                # Verify JWT token
-                user_id = get_jwt_identity()
-                user = User.query.get(user_id)
-                if user:
-                    logger.info(f"Auth check successful for user: {user.email}")
-                    return user.to_dict()
-                else:
-                    logger.warning(f"User not found for ID: {user_id}")
-                    return {"error": "User not found"}, 401
-            except Exception as jwt_error:
-                logger.warning(f"JWT verification failed: {str(jwt_error)}")
-                return {"error": "Invalid token"}, 401
-        else:
-            logger.warning("No Authorization header found")
-            return {"error": "No token provided"}, 401
-            
+        if current_user.is_authenticated:
+            logger.info(f"Auth check successful for user: {current_user.email}")
+            # Добавляем дополнительную проверку сессии
+            user = User.query.get(current_user.id)
+            if not user:
+                logout_user()
+                return {"error": "User not found"}, 401
+            return user.to_dict()
+        logger.warning("Auth check failed - user not authenticated")
+        logger.warning(f"Current user: {current_user}")
+        logger.warning(f"Session data: {dict(session)}")
+        return {"error": "Not authenticated"}, 401
     except Exception as e:
         logger.error(f"Auth check error: {str(e)}")
         logger.exception("Full traceback:")
@@ -939,7 +932,7 @@ def ai_generate():
 
 
 @bp.post("/import-external-recipe")
-@jwt_auth_required
+@login_required
 def import_external_recipe():
     """Import a recipe from external source (MealDB)"""
     try:
@@ -963,7 +956,7 @@ def import_external_recipe():
             area=data.get('area'),
             instructions=data['instructions'],
             image_url=data.get('imageUrl'),
-            user_id=g.current_user.id,
+            user_id=current_user.id,
             is_external=True,
             external_id=data.get('externalId')
         )
