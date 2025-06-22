@@ -1,5 +1,5 @@
 # app/routes.py
-from flask import Blueprint, request, jsonify, abort, current_app, send_from_directory
+from flask import Blueprint, request, jsonify, abort, current_app, send_from_directory, session
 from flask_login import login_user, logout_user, login_required, current_user
 from werkzeug.utils import secure_filename
 from datetime import datetime
@@ -112,7 +112,7 @@ def login():
                 'logged_in',
                 max_age=86400,
                 secure=True,
-                samesite='None',
+                samesite='Lax',  # Match session cookie setting
                 httponly=False
             )
             logger.info("Set debug cookie for production")

@@ -90,12 +90,12 @@ def create_app(test_config=None):
         if os.environ.get('RENDER') == 'true':
             app.config.update(
                 SESSION_COOKIE_SECURE=True,
-                SESSION_COOKIE_SAMESITE='None',
-                SESSION_COOKIE_HTTPONLY=True,  # Try with HttpOnly=True
+                SESSION_COOKIE_SAMESITE='Lax',  # Try Lax instead of None
+                SESSION_COOKIE_HTTPONLY=True,
                 SESSION_COOKIE_DOMAIN=None,
                 REMEMBER_COOKIE_SECURE=True,
-                REMEMBER_COOKIE_SAMESITE='None',
-                REMEMBER_COOKIE_HTTPONLY=True,  # Try with HttpOnly=True
+                REMEMBER_COOKIE_SAMESITE='Lax',  # Try Lax instead of None
+                REMEMBER_COOKIE_HTTPONLY=True,
                 REMEMBER_COOKIE_DOMAIN=None,
             )
         else:
