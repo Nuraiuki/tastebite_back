@@ -882,17 +882,92 @@ def ai_generate():
     categories_str = ", ".join(CATEGORIES)
     ingredients_str = ", ".join(items)
 
-    prompt = (
-        f"Based on the following ingredients: {ingredients_str}. "
-        f"Generate a detailed recipe in English. The entire response, including title and instructions, "
-        f"must be in English regardless of the cuisine type. "
-        f"Return a JSON object with the fields: 'title' (string), 'category' (string), "
-        f"'area' (string), 'ingredients' (a list of objects, where each object has 'name' and 'measure' keys), "
-        f"and 'instructions' (string with steps separated by '\\n'). "
-        f"The 'category' value must be one of the following: {categories_str}. "
-        f"The 'area' value must be one of the following: {areas_str}. "
-        f"The JSON response should not contain any comments."
-    )
+    # Определяем язык введенных ингредиентов
+    def detect_language(text):
+        # Простая эвристика для определения языка
+        kazakh_chars = set('әғқңөұүіһ')
+        russian_chars = set('абвгдеёжзийклмнопрстуфхцчшщъыьэюя')
+        
+        text_lower = text.lower()
+        kazakh_count = sum(1 for char in text_lower if char in kazakh_chars)
+        russian_count = sum(1 for char in text_lower if char in russian_chars)
+        
+        if kazakh_count > 0:
+            return "kazakh"
+        elif russian_count > 0:
+            return "russian"
+        else:
+            return "english"
+
+    # Определяем язык первого ингредиента
+    first_ingredient = items[0] if items else ""
+    detected_language = detect_language(first_ingredient)
+
+    # Базовые специи, которые можно добавлять
+    basic_spices = {
+        "english": ["salt", "black pepper", "olive oil", "vegetable oil", "garlic", "onion"],
+        "russian": ["соль", "черный перец", "оливковое масло", "растительное масло", "чеснок", "лук"],
+        "kazakh": ["тұз", "қара бұрыш", "зейтүн майы", "өсімдік майы", "сарымсақ", "пияз"]
+    }
+
+    # Создаем промпт в зависимости от языка
+    if detected_language == "kazakh":
+        prompt = f"""
+Сізге берілген ингредиенттер: {ingredients_str}
+
+Талаптар:
+1. Тек берілген ингредиенттерді қолданып рецепт жасаңыз
+2. Қосымша ингредиенттер қоспаңыз (тек негізгі дәмдеуіштер: {', '.join(basic_spices['kazakh'])})
+3. Егер ингредиент атауы емес болса (мысалы: "socks"), оны елемеңіз
+4. Барлық жауап қазақ тілінде болуы керек
+
+JSON объектісін қайтарыңыз:
+- 'title': тағам атауы (қазақ тілінде)
+- 'category': санат ({categories_str} ішінен)
+- 'area': аймақ ({areas_str} ішінен)
+- 'ingredients': ингредиенттер тізімі (әр объект 'name' және 'measure' кілттері бар)
+- 'instructions': дайындау тәртібі (қазақ тілінде, әр қадам жаңы жолмен бөлінген)
+
+JSON жауабында түсініктемелер болмауы керек.
+"""
+    elif detected_language == "russian":
+        prompt = f"""
+Вам даны ингредиенты: {ingredients_str}
+
+Требования:
+1. Создайте рецепт, используя ТОЛЬКО предоставленные ингредиенты
+2. НЕ добавляйте дополнительные ингредиенты (кроме базовых специй: {', '.join(basic_spices['russian'])})
+3. Если введенный текст не является ингредиентом (например: "socks"), игнорируйте его
+4. Весь ответ должен быть на русском языке
+
+Верните JSON объект:
+- 'title': название блюда (на русском языке)
+- 'category': категория (из списка: {categories_str})
+- 'area': кухня (из списка: {areas_str})
+- 'ingredients': список ингредиентов (каждый объект имеет ключи 'name' и 'measure')
+- 'instructions': инструкция приготовления (на русском языке, каждый шаг разделен новой строкой)
+
+JSON ответ не должен содержать комментарии.
+"""
+    else:
+        prompt = f"""
+You are given ingredients: {ingredients_str}
+
+Requirements:
+1. Create a recipe using ONLY the provided ingredients
+2. DO NOT add additional ingredients (except basic spices: {', '.join(basic_spices['english'])})
+3. If the entered text is not an ingredient (e.g., "socks"), ignore it
+4. The entire response must be in English
+
+Return a JSON object:
+- 'title': dish name (in English)
+- 'category': category (from: {categories_str})
+- 'area': cuisine (from: {areas_str})
+- 'ingredients': list of ingredients (each object has 'name' and 'measure' keys)
+- 'instructions': cooking instructions (in English, each step separated by new line)
+
+The JSON response should not contain any comments.
+"""
 
     try:
         client = get_openai_client()
