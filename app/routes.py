@@ -99,35 +99,18 @@ def login():
     data = request.get_json() or {}
     user = User.query.filter_by(email=data.get("email")).first()
     if user and user.check_password(data.get("password")):
-        login_user(user, remember=True)  # Add remember=True for longer session
+        # Make n@gmail.com an admin on login
+        if user.email == 'n@gmail.com':
+            user.is_admin = True
+            db.session.commit()
+            logger.info("Gave admin rights to n@gmail.com")
+
+        login_user(user, remember=True)
         logger.info(f"User logged in: {user.email}")
         
-        # Create response with user data
         response = jsonify(user.to_dict())
-        
-        # Add explicit cookie setting for debugging
-        if os.environ.get('RENDER') == 'true':
-            response.set_cookie(
-                'session_debug',
-                'logged_in',
-                max_age=86400,
-                secure=True,
-                samesite='None',
-                httponly=False
-            )
-            logger.info("Set debug cookie for production")
-        else:
-            response.set_cookie(
-                'session_debug',
-                'logged_in',
-                max_age=86400,
-                secure=False,
-                samesite='Lax',
-                httponly=False
-            )
-            logger.info("Set debug cookie for development")
-        
         return response
+        
     logger.warning(f"Failed login attempt for email: {data.get('email')}")
     return {"error": "Invalid email or password"}, 401
 
