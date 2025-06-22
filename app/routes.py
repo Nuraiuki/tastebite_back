@@ -10,10 +10,29 @@ import os
 import logging
 import time
 from sqlalchemy import func
-from flask_jwt_extended import create_access_token, jwt_required, get_jwt_identity
 
 # Configure logging
 logger = logging.getLogger(__name__)
+
+def jwt_auth_required(f):
+    """Custom decorator to handle JWT authentication"""
+    from functools import wraps
+    from flask_jwt_extended import get_jwt_identity
+    from flask import g
+    
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        try:
+            user_id = get_jwt_identity()
+            user = User.query.get(user_id)
+            if not user:
+                return {"error": "User not found"}, 401
+            g.current_user = user
+            return f(*args, **kwargs)
+        except Exception as e:
+            logger.warning(f"JWT authentication failed: {str(e)}")
+            return {"error": "Authentication required"}, 401
+    return decorated_function
 
 from .models import (
     db, Recipe, Ingredient, User,
@@ -1133,23 +1152,3 @@ def get_public_shopping_list(token):
 
 # экспорт для create_app
 __all__ = ["bp", "bp_ai"]
-
-def jwt_auth_required(f):
-    """Custom decorator to handle JWT authentication"""
-    from functools import wraps
-    from flask_jwt_extended import get_jwt_identity
-    from flask import g
-    
-    @wraps(f)
-    def decorated_function(*args, **kwargs):
-        try:
-            user_id = get_jwt_identity()
-            user = User.query.get(user_id)
-            if not user:
-                return {"error": "User not found"}, 401
-            g.current_user = user
-            return f(*args, **kwargs)
-        except Exception as e:
-            logger.warning(f"JWT authentication failed: {str(e)}")
-            return {"error": "Authentication required"}, 401
-    return decorated_function
