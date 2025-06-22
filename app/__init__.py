@@ -103,8 +103,8 @@ def create_app(test_config=None):
             app.config.update(
                 SESSION_COOKIE_SECURE=False,
                 SESSION_COOKIE_SAMESITE='Lax',
-                SESSION_COOKIE_HTTPONLY=True,
-                SESSION_COOKIE_DOMAIN=None,
+            SESSION_COOKIE_HTTPONLY=True,
+            SESSION_COOKIE_DOMAIN=None,
                 REMEMBER_COOKIE_SECURE=False,
                 REMEMBER_COOKIE_SAMESITE='Lax',
                 REMEMBER_COOKIE_HTTPONLY=True,
@@ -126,7 +126,7 @@ def create_app(test_config=None):
     login_manager.session_protection = "strong"
     login_manager.login_view = None  # Disable redirect to login view
     jwt.init_app(app)
-    
+
     # Register blueprints
     from .routes import bp, bp_ai
     app.register_blueprint(bp, url_prefix="/api")

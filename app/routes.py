@@ -884,8 +884,8 @@ def ai_generate():
 
     prompt = (
         f"Based on the following ingredients: {ingredients_str}. "
-        f"Generate a detailed recipe. The entire response, including title and instructions, "
-        f"must be in the same language as the ingredients provided. "
+        f"Generate a detailed recipe in English. The entire response, including title and instructions, "
+        f"must be in English regardless of the cuisine type. "
         f"Return a JSON object with the fields: 'title' (string), 'category' (string), "
         f"'area' (string), 'ingredients' (a list of objects, where each object has 'name' and 'measure' keys), "
         f"and 'instructions' (string with steps separated by '\\n'). "
